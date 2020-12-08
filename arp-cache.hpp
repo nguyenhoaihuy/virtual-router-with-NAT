@@ -98,6 +98,9 @@ public:
   void
   periodicCheckArpRequestsAndCacheEntries();
 
+  void 
+  send_out_all_pending_packets(uint32_t tip,const struct arp_hdr *replying_arp_hdr);
+
   /**
    * Checks if an IP->MAC mapping is in the cache. IP is in network byte order.
    * You must free the returned structure if it is not NULL.

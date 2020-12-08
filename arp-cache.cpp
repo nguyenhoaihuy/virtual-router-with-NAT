@@ -30,9 +30,119 @@ namespace simple_router {
 void
 ArpCache::periodicCheckArpRequestsAndCacheEntries()
 {
+  // actually send ARP request
+  int count = 0;
+  for (std::list<std::shared_ptr<ArpRequest>>::iterator req = m_arpRequests.begin(); req != m_arpRequests.end();) {
+    
+      if (steady_clock::now() - (*req)->timeSent > seconds(1)) {
+          printf("Sending ARP packet ...!\n");
+          // check less than 5 times
+          // std::shared_ptr<ArpEntry> arpent = lookup((*req)->ip);
+          if ((*req)->nTimesSent < 5){ 
+            // actually send the ARP request
+            //create ARP request packet
+            Buffer arp_request_packet = std::vector<unsigned char>(42, 0);
+            RoutingTableEntry routing_entry = m_router.getRoutingTable().lookup((*req)->ip);
+            const Interface* inIF = m_router.findIfaceByName(routing_entry.ifName);
+            //set ethenet header
+            ethernet_hdr *eth_header = (ethernet_hdr*) malloc(sizeof(ethernet_hdr));
+            arp_hdr *arp_header = (arp_hdr*) malloc(sizeof(arp_hdr));
+            memset(eth_header->ether_dhost, 255, ETHER_ADDR_LEN);
+            memcpy(eth_header->ether_shost, &inIF->addr[0], ETHER_ADDR_LEN);
+            eth_header->ether_type = htons(0x0806);
+            //set arp header
+            // arp_hdr* new_arp_header = (arp_hdr*) malloc(sizeof(arp_hdr));  
+            memcpy(&arp_header->arp_tip,&(*req)->ip,sizeof(arp_header->arp_tip));
+            memcpy(&arp_header->arp_sip,&inIF->ip,sizeof(arp_header->arp_sip));
+            memset(arp_header->arp_tha,255,sizeof(arp_header->arp_sha));
+            memcpy(&arp_header->arp_sha,&inIF->addr[0],sizeof(arp_header->arp_sha));
+            arp_header->arp_op = htons(0x0001);
+            arp_header->arp_hrd = htons(0x0001);
+            arp_header->arp_pro = htons(0x0800);
+            arp_header->arp_hln = 6;
+            arp_header->arp_pln = 4;
+            //
+            memcpy(&arp_request_packet[0],eth_header,sizeof(ethernet_hdr));
+            memcpy(&arp_request_packet[sizeof(ethernet_hdr)],arp_header,sizeof(arp_hdr));
+            // uint8_t *buffer = (uint8_t *) reply_packet.data();
+            // uint8_t *payload = (uint8_t*)new_arp_header;
+            // print_hdr_arp(payload);
+            printf("Sending a ARP request packet via %s\n",(inIF->name).c_str());
+            m_router.sendPacket(arp_request_packet, inIF->name);
+            print_hdrs(arp_request_packet);
+            (*req)->timeSent = steady_clock::now();
+            (*req)->nTimesSent++;
+            ++req;
+          } else { // remove the ARP request
+            req=m_arpRequests.erase(req);
+          }
+      } else {//remove the ARP request
+        req=m_arpRequests.erase(req);
+      }
+  }
 
+
+  for (std::list<std::shared_ptr<ArpEntry>>::iterator entry = m_cacheEntries.begin(); entry != m_cacheEntries.end();) {
+      count++;
+      printf("ip:.............%s\n",ipToString((*entry)->ip).c_str());
+      if (!((*entry)->isValid)){
+        printf("erease.............................%d.!\n",count);
+        entry = m_cacheEntries.erase(entry);
+      } else {
+        ++entry;
+      }
+  }
+  printf("Number of request = %d.........\n",count);
+
+  //
   // FILL THIS IN
 
+}
+
+void 
+ArpCache::send_out_all_pending_packets(uint32_t tip,const struct arp_hdr *replying_arp_hdr){
+  // Find pending request
+  std::shared_ptr<ArpRequest> pending_request = nullptr;
+  for (const auto& arp_request : m_arpRequests){
+    if (arp_request->ip == tip){
+      pending_request = arp_request;
+      break;
+    }
+  }
+  // send all packets in the pending request
+  // check if any request relate to arp
+  // if so, send all packets to the target
+  if (pending_request!=NULL){
+    printf("Sending all pending packets\n");
+    for (const auto& packet : pending_request->packets){
+      // make sending packet
+      Buffer sending_packet = std::vector<unsigned char>(packet.packet.size(), 0);
+      ethernet_hdr* new_ethernet_header = (ethernet_hdr*) malloc(sizeof(ethernet_hdr));
+      memcpy(new_ethernet_header->ether_shost, &replying_arp_hdr->arp_tha[0], ETHER_ADDR_LEN);
+      memcpy(new_ethernet_header->ether_dhost, &replying_arp_hdr->arp_sha[0], ETHER_ADDR_LEN);
+      new_ethernet_header->ether_type = htons(0x0800);
+
+      memcpy(&sending_packet[0],new_ethernet_header,sizeof(ethernet_hdr));
+      memcpy(&sending_packet[sizeof(ethernet_hdr)],&packet.packet[sizeof(ethernet_hdr)],packet.packet.size()-sizeof(ethernet_hdr));
+      // uint8_t *buffer = (uint8_t *) reply_packet.data();
+      // uint8_t *payload = (uint8_t*)new_arp_header;
+      // print_hdr_arp(payload);
+      //look for out interface to send
+      try{
+        RoutingTableEntry routing_entry = m_router.getRoutingTable().lookup(tip);
+        printf("Sending pending packet.... to %s!\n",routing_entry.ifName.c_str());
+        print_hdrs(sending_packet);
+          // const Interface* out_intf = m_router.findIfaceByName(routing_entry.ifName);
+        m_router.sendPacket(sending_packet,routing_entry.ifName);
+      } catch (std::runtime_error& error){
+        printf("Cannot find next hop to forward the packet\n");
+      }
+      
+      
+      
+    }
+  }
+  //if not found, do nothing
 }
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////

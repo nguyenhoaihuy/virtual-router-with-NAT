@@ -44,6 +44,24 @@ public:
   void
   handlePacket(const Buffer& packet, const std::string& inIface, int nat_flag);
 
+  void
+  handleIPPacket(const Buffer& packet,const std::string& inIface);
+
+  void
+  forwardPacket(const Buffer& packet,const std::string& inIface);
+
+  void
+  handleICMPPacket(const Buffer& packet,const std::string& inIface);
+
+  ip_hdr* getIPHeader(const Buffer& packet);
+  icmp_hdr* getICMPHeader(const Buffer& packet);
+
+  void
+  handleARPRequest(arp_hdr *arphd, ethernet_hdr* ethernetHeader);
+
+  void
+  handleARPReply(const arp_hdr *arphd, const ethernet_hdr* ethernetHeader);
+
   /**
    * USE THIS METHOD TO SEND PACKETS
    *

@@ -22,6 +22,7 @@
 #include <assert.h>
 #include <string.h>
 #include <unistd.h>
+#include <iostream>
 
 namespace simple_router {
 
@@ -31,10 +32,21 @@ namespace simple_router {
 RoutingTableEntry
 RoutingTable::lookup(uint32_t ip) const
 {
-
+  std::cout<<ip<<"\n";
   // FILL THIS IN
-
-  throw std::runtime_error("Routing entry not found");
+  // longest match algorithm
+  const RoutingTableEntry *dest = NULL;
+  if (m_entries.empty()) throw std::runtime_error("Routing entry not found");
+  for (auto const& routing_entry :m_entries){
+    uint32_t ip_mask = ip & routing_entry.mask;
+    uint32_t dest_mask = routing_entry.dest & routing_entry.mask;
+    
+    if (ip_mask == dest_mask && (dest == NULL || routing_entry.dest >= dest->mask)) {
+      dest = &routing_entry;
+    }
+  }
+  if (dest == NULL) throw std::runtime_error("Routing entry not found");
+  return *dest;
 }
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
