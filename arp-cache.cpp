@@ -31,7 +31,7 @@ void
 ArpCache::periodicCheckArpRequestsAndCacheEntries()
 {
   // actually send ARP request
-  int count = 0;
+  // int count = 0;
   for (std::list<std::shared_ptr<ArpRequest>>::iterator req = m_arpRequests.begin(); req != m_arpRequests.end();) {
     
       if (steady_clock::now() - (*req)->timeSent > seconds(1)) {
@@ -67,7 +67,7 @@ ArpCache::periodicCheckArpRequestsAndCacheEntries()
             // uint8_t *buffer = (uint8_t *) reply_packet.data();
             // uint8_t *payload = (uint8_t*)new_arp_header;
             // print_hdr_arp(payload);
-            printf("Sending a ARP request packet via %s\n",(inIF->name).c_str());
+            printf("Sending a ARP request packet via ......%s\n",(inIF->name).c_str());
             m_router.sendPacket(arp_request_packet, inIF->name);
             print_hdrs(arp_request_packet);
             (*req)->timeSent = steady_clock::now();
@@ -83,16 +83,16 @@ ArpCache::periodicCheckArpRequestsAndCacheEntries()
 
 
   for (std::list<std::shared_ptr<ArpEntry>>::iterator entry = m_cacheEntries.begin(); entry != m_cacheEntries.end();) {
-      count++;
-      printf("ip:.............%s\n",ipToString((*entry)->ip).c_str());
+      // count++;
+      // printf("ip:.............%s\n",ipToString((*entry)->ip).c_str());
       if (!((*entry)->isValid)){
-        printf("erease.............................%d.!\n",count);
+        // printf("erease.............................%d.!\n",count);
         entry = m_cacheEntries.erase(entry);
       } else {
         ++entry;
       }
   }
-  printf("Number of request = %d.........\n",count);
+  // printf("Number of request = %d.........\n",count);
 
   //
   // FILL THIS IN
