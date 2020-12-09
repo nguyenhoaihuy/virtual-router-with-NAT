@@ -54,11 +54,11 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface, int
     arp_hdr *arp_header = (arp_hdr*)payload;
     if (ntohs(arp_header->arp_op)==1){
       // std::cout<<"hehe "<<ntohs(arp_header->arp_op);
-      handleARPRequest(arp_header, ethernetHeader);
+      handleARPRequest(arp_header, ethernetHeader, nat_flag);
     }
     // the packet is ARP reply 
     else {
-      handleARPReply(arp_header, ethernetHeader);
+      handleARPReply(arp_header, ethernetHeader, nat_flag);
     }
     printf("======================================================\n");
   }
@@ -80,7 +80,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface, int
       // check valid length
       // printf("%d - %d\n",ip_header->ip_len,(sizeof(ethernet_hdr)+sizeof(ip_hdr)));
       if (ip_header->ip_len >= (sizeof(ethernet_hdr)+(int)sizeof(ip_hdr))){
-        handleIPPacket(packet,inIface);
+        handleIPPacket(packet,inIface,nat_flag);
       }
       // invalid packet length
       else printf("Invalid Length\n");
@@ -95,7 +95,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface, int
 }
 
 void
-SimpleRouter::handleIPPacket(const Buffer& packet,const std::string& inIface){
+SimpleRouter::handleIPPacket(const Buffer& packet,const std::string& inIface,int nat_flag){
   //check if the target is the router
   // printf("Handling IP packet...\n");
   // look for interface with target ip
@@ -105,7 +105,7 @@ SimpleRouter::handleIPPacket(const Buffer& packet,const std::string& inIface){
   if (looking_interface != NULL){
     // If IMCP packet?
     if (iphd->ip_p == 0x01){ // IMCP packet
-      handleICMPPacket(packet,inIface);
+      handleICMPPacket(packet,inIface,nat_flag);
     } else { //Handle NAT
       // Handle NAT
     }
@@ -113,16 +113,15 @@ SimpleRouter::handleIPPacket(const Buffer& packet,const std::string& inIface){
   // if the router is not the target, foward the packet
   else {
     // forward the packet
-    forwardPacket(packet,inIface);
+    forwardPacket(packet,inIface,nat_flag);
   }
   return;
 }
 
 void 
-SimpleRouter::forwardPacket(const Buffer& packet,const std::string& inIface){
+SimpleRouter::forwardPacket(const Buffer& packet,const std::string& inIface, int nat_flag){
   printf("Forwarding the ip packet..............................\n");
   Buffer sending_packet = std::vector<unsigned char>(packet.size(), 0);
-  memcpy(&sending_packet[0],&packet[0],packet.size());
   ip_hdr *iphd = getIPHeader(packet);
   uint8_t ttl = iphd->ip_ttl;
   ttl--;
@@ -133,15 +132,38 @@ SimpleRouter::forwardPacket(const Buffer& packet,const std::string& inIface){
       RoutingTableEntry routing_entry = getRoutingTable().lookup(iphd->ip_dst);
       // look for dest mac in arp cache
       std::shared_ptr<ArpEntry> arpent = m_arp.lookup(routing_entry.gw);
+      // if nat_flat
+      if (nat_flag==1){
+        // external interface
+        const Interface* exIF = findIfaceByName("sw0-eth4");
+        const Interface* inIF = findIfaceByName(inIface);
+        // check if the packet is ICMP
+        if (iphd->ip_p == 0x01){ // IMCP packet
+          // get icmp header
+          icmp_hdr *icmphd = getICMPHeader(packet);
+          // check if the nat entry exist or not
+          std::shared_ptr<NatEntry> nat_entry = m_natTable.lookup(icmphd->icmp_id);
+          if (nat_entry==nullptr){
+            // insert new nat entry
+            m_natTable.insertNatEntry(icmphd->icmp_id,iphd->ip_src,exIF->ip);
+          }
+          memcpy(&iphd->ip_src,&exIF->ip,sizeof(iphd->ip_src));
+        } 
+        
+      }
+      memcpy(&sending_packet[0],&packet[0],packet.size());
       // if the dist ip in ARP cache
       if (arpent != nullptr){
         // forward the packet
         // set ethernet header
         memcpy(&sending_packet[ETHER_ADDR_LEN],&sending_packet[0],ETHER_ADDR_LEN);
         memcpy(&sending_packet[0],&arpent->mac[0],ETHER_ADDR_LEN);
-
+        
         // set ip header
         ip_hdr *sending_iphd = getIPHeader(sending_packet);
+
+        
+
         sending_iphd->ip_ttl = ttl;
         sending_iphd->ip_sum = 0;
         uint16_t calculate_cksum = cksum(sending_iphd,sizeof(ip_hdr));
@@ -151,8 +173,9 @@ SimpleRouter::forwardPacket(const Buffer& packet,const std::string& inIface){
         sendPacket(sending_packet,routing_entry.ifName);
 
       } else { // if the dist ip not in ARP cache
-        printf("Sending ARP request.........\n");
+        printf("Queueing an ARP request.........\n");
         // make ARP request
+        print_hdrs(packet);
         m_arp.queueRequest(routing_entry.gw, packet,routing_entry.ifName);
       }
     } catch (std::runtime_error& error) {
@@ -165,7 +188,7 @@ SimpleRouter::forwardPacket(const Buffer& packet,const std::string& inIface){
 }
 
 void
-SimpleRouter::handleICMPPacket(const Buffer& packet,const std::string& inIface){
+SimpleRouter::handleICMPPacket(const Buffer& packet,const std::string& inIface, int nat_flag){
   // printf("Handling ICMP packet......!");
   const Interface* inIF = findIfaceByName(inIface);
   icmp_hdr *icmphd = getICMPHeader(packet);
@@ -173,9 +196,11 @@ SimpleRouter::handleICMPPacket(const Buffer& packet,const std::string& inIface){
   uint16_t original_cksum = icmphd->icmp_sum;
   icmphd->icmp_sum = 0;
   uint16_t calculate_cksum = cksum(icmphd,packet.size()-sizeof(ethernet_hdr)-sizeof(ip_hdr));
+  
   // printf("%d - %d\n",original_cksum,calculate_cksum);
   //if correct, handle IP packet
   if (calculate_cksum==original_cksum){
+    icmphd->icmp_sum = calculate_cksum;
     if (icmphd->icmp_type == 8){ //echo message
       // create reply packet and send back to the interface that receive the packet
       Buffer sending_packet = std::vector<unsigned char>(packet.size(), 0);
@@ -188,6 +213,9 @@ SimpleRouter::handleICMPPacket(const Buffer& packet,const std::string& inIface){
       // set ip header
       ip_hdr* ip_reply_hd = getIPHeader(sending_packet);
       ip_hdr* iphd = getIPHeader(packet);
+
+
+
       memcpy(&ip_reply_hd->ip_dst,&iphd->ip_src,sizeof(ip_reply_hd->ip_dst));
       memcpy(&ip_reply_hd->ip_src,&iphd->ip_dst,sizeof(ip_reply_hd->ip_dst));
       ip_reply_hd->ip_sum = 0;
@@ -209,7 +237,73 @@ SimpleRouter::handleICMPPacket(const Buffer& packet,const std::string& inIface){
       sendPacket(sending_packet, inIF->name);
       //look for the 
 
-    } 
+    } else {
+      if (nat_flag==1){
+        printf("Handling NAT reply..................\n");
+        Buffer sending_packet = std::vector<unsigned char>(packet.size(), 0);
+        memcpy(&sending_packet[0],&packet[0],packet.size());
+
+
+        // set ip header
+        ip_hdr* ip_reply_hd = getIPHeader(sending_packet);
+        ip_hdr* iphd = getIPHeader(packet);
+        icmp_hdr* icmp_reply_hd = getICMPHeader(sending_packet);
+
+        //lookup Nat table
+        std::shared_ptr<NatEntry> nat_entry = m_natTable.lookup(icmp_reply_hd->icmp_id);
+        if (nat_entry!=nullptr){
+          if (ip_reply_hd->ip_dst==nat_entry->external_ip){
+            //look for the new interface
+            const Interface* outIF = findIfaceByIp(nat_entry->external_ip);
+            // look for rounding table
+            RoutingTableEntry routing_entry = getRoutingTable().lookup(nat_entry->internal_ip);
+            // set ethernet header
+            
+            memcpy(&sending_packet[ETHER_ADDR_LEN],&outIF->addr[0],ETHER_ADDR_LEN);
+            //translate the ip
+            memcpy(&ip_reply_hd->ip_dst,&nat_entry->internal_ip,sizeof(ip_reply_hd->ip_dst));
+            // change destination
+            memcpy(&ip_reply_hd->ip_src,&iphd->ip_src,sizeof(ip_reply_hd->ip_src));
+            ip_reply_hd->ip_sum = 0;
+            uint16_t calculate_cksum = cksum(ip_reply_hd,sizeof(ip_hdr));
+            ip_reply_hd->ip_sum = calculate_cksum;
+            std::shared_ptr<ArpEntry> arpent = m_arp.lookup(routing_entry.gw);
+            if (arpent!=nullptr){
+              memcpy(&sending_packet[0],&arpent->mac[0] ,ETHER_ADDR_LEN);
+              printf("Reply NAT on......... %s.....\n",routing_entry.ifName.c_str());
+              print_hdrs(sending_packet);
+              sendPacket(sending_packet, routing_entry.ifName);
+            } else {
+              printf("Add NAT reply to queue...........\n");
+              print_hdrs(sending_packet);
+              m_arp.queueRequest(routing_entry.gw, sending_packet,routing_entry.ifName);
+            }
+            
+
+            // set icmp header
+            // icmp_reply_hd->icmp_type = 0;
+            // icmp_reply_hd->icmp_sum = 0;
+            // uint16_t calculate_icmp_cksum = cksum(icmp_reply_hd,sending_packet.size()-sizeof(ethernet_hdr)-sizeof(ip_hdr));
+            // icmp_reply_hd->icmp_sum = calculate_icmp_cksum;
+            //set checksum for icmp header
+            //set checksum for ip header
+            // printf("received................!\n");
+            // print_hdrs(packet);
+            // printf("sending................!\n");
+            // print_hdrs(sending_packet);
+            
+            
+          } else {
+            printf("Drop the packet................!\n");
+          }
+        } else {
+          printf("ERROR: Cannot find NAT entry.......\n");
+        }
+        
+        
+        
+      }
+    }
   } else {
     printf("ICMP Checksum Error...........\n");
   }
@@ -229,7 +323,7 @@ icmp_hdr* SimpleRouter::getICMPHeader(const Buffer& packet){
 }
 
 void
-SimpleRouter::handleARPRequest(arp_hdr *arphdr, ethernet_hdr* ethernetHeader){
+SimpleRouter::handleARPRequest(arp_hdr *arphdr, ethernet_hdr* ethernetHeader, int nat_flag){
   // find existing entry of source ip
   printf("Handling ARP request ................\n");
   std::shared_ptr<simple_router::ArpEntry> arp_entry;
@@ -279,7 +373,7 @@ SimpleRouter::handleARPRequest(arp_hdr *arphdr, ethernet_hdr* ethernetHeader){
 
 
 void 
-SimpleRouter::handleARPReply(const arp_hdr *arphd, const ethernet_hdr* ethernetHeader){
+SimpleRouter::handleARPReply(const arp_hdr *arphd, const ethernet_hdr* ethernetHeader, int nat_flag){
   //check if the ip and MAC address are in ARP cache
   std::shared_ptr<simple_router::ArpEntry> arp_entry = m_arp.lookup(arphd->arp_sip);
   //if not found, store in ARP cache and send out all pending packages

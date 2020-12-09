@@ -14,11 +14,27 @@ namespace simple_router {
 void
 NatTable::checkNatTable()
 {
+  for (auto it = m_natTable.cbegin(); it != m_natTable.cend() /* not hoisted */; /* no increment */){
+    if (!(it->second->isValid)){
+      it=m_natTable.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 std::shared_ptr<NatEntry>
 NatTable::lookup(uint16_t id)
 {
+  // lock the critical section
+  std::lock_guard<std::mutex> lock(m_mutex);
+  // look for an entry with id
+  auto entry = m_natTable.find(id);
+  if (entry != m_natTable.end() && entry->second->isValid){
+    // set used time
+    entry->second->timeUsed = steady_clock::now();
+    return entry->second;
+  }
   return nullptr;
 }
 
@@ -26,6 +42,19 @@ NatTable::lookup(uint16_t id)
 void
 NatTable::insertNatEntry(uint16_t id, uint32_t in_ip, uint32_t ex_ip)
 {
+  //std::map<uint16_t, std::shared_ptr<NatEntry>> m_natTable;
+  //lock the mutex
+  std::lock_guard<std::mutex> lock(m_mutex);
+  //create an NAT entry
+  auto entry = std::make_shared<NatEntry>();
+
+  entry->internal_ip = in_ip;
+  entry->external_ip = ex_ip;
+  entry->timeUsed = steady_clock::now();
+  entry->isValid = true;
+
+  // insert to NAT map
+  m_natTable.insert({id, entry});
 }
 
 //////////////////////////////////////////////////////////////////////////
