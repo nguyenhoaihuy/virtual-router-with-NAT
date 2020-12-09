@@ -139,6 +139,7 @@ SimpleRouter::forwardPacket(const Buffer& packet,const std::string& inIface, int
         const Interface* inIF = findIfaceByName(inIface);
         // check if the packet is ICMP
         if (iphd->ip_p == 0x01){ // IMCP packet
+
           // get icmp header
           icmp_hdr *icmphd = getICMPHeader(packet);
           // check if the nat entry exist or not
@@ -176,6 +177,7 @@ SimpleRouter::forwardPacket(const Buffer& packet,const std::string& inIface, int
         printf("Queueing an ARP request.........\n");
         // make ARP request
         print_hdrs(packet);
+        iphd->ip_ttl = ttl;
         m_arp.queueRequest(routing_entry.gw, packet,routing_entry.ifName);
       }
     } catch (std::runtime_error& error) {
@@ -264,6 +266,7 @@ SimpleRouter::handleICMPPacket(const Buffer& packet,const std::string& inIface, 
             memcpy(&ip_reply_hd->ip_dst,&nat_entry->internal_ip,sizeof(ip_reply_hd->ip_dst));
             // change destination
             memcpy(&ip_reply_hd->ip_src,&iphd->ip_src,sizeof(ip_reply_hd->ip_src));
+            ip_reply_hd->ip_ttl = ip_reply_hd->ip_ttl-1;
             ip_reply_hd->ip_sum = 0;
             uint16_t calculate_cksum = cksum(ip_reply_hd,sizeof(ip_hdr));
             ip_reply_hd->ip_sum = calculate_cksum;

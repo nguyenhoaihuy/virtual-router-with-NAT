@@ -14,13 +14,16 @@ namespace simple_router {
 void
 NatTable::checkNatTable()
 {
+  int count = 0;
   for (auto it = m_natTable.cbegin(); it != m_natTable.cend() /* not hoisted */; /* no increment */){
+    count++;
     if (!(it->second->isValid)){
       it=m_natTable.erase(it);
     } else {
       ++it;
     }
   }
+  printf("NAT table entries..................%d\n",count);
 }
 
 std::shared_ptr<NatEntry>
@@ -52,9 +55,10 @@ NatTable::insertNatEntry(uint16_t id, uint32_t in_ip, uint32_t ex_ip)
   entry->external_ip = ex_ip;
   entry->timeUsed = steady_clock::now();
   entry->isValid = true;
-
+  
   // insert to NAT map
   m_natTable.insert({id, entry});
+  printf("Inserted a new entry............. size %lu\n",m_natTable.size());
 }
 
 //////////////////////////////////////////////////////////////////////////
