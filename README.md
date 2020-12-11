@@ -1,34 +1,40 @@
 UCLA CS118 Project (Simple Router)
 ====================================
 
-For more detailed information about the project and starter code, refer to the project description on CCLE.
+Huy Nguyen - 005358560
 
-(For build dependencies, please refer to [`Vagrantfile`](Vagrantfile).)
+## High level design
 
-## Makefile
+- Parse Ethernet header of the received packet
+- Check Ethernet type (ARP or IP?)
+    - If the packet is APR packet
+        - If it is an ARP request
+        - If it is an ARP reply
+    - If the packet is IP packet
+        -  Verify checksum and length (if not valid, drop the packet)
+        - If the destination is at router
+            - If the packet is ICMP echo
+                - Verify ICMP checksum (if not valid, drop the packet)
+                - Send ICMP echo reply to the incoming interface
+            - if the packet is ICMP reply
+                - If NAT mode is enabled
+                    - If IMCP id in NAT table and dstIP == enternal IP
+                        - Translate dest IP to internal IP
+                        - Update TTL and checksum
+                        - If the next hop addr not in ARP table, queue a ARP request
+                        - If the next hop addr is in ARP table, forward the packet
+                    - Else, drop the packet
+                - If NAT mode is disabled, drop the packet, drop the packet
 
-The provided `Makefile` provides several targets, including to build `router` implementation.  The starter code includes only the framework to receive raw Ethernet frames and to send Ethernet frames to the desired interfaces.  Your job is to implement the routers logic.
+        - If the destination is not at router
+            - If NAT is enable and srcIP==internalIP
+                - Translate srcIP to externalIP
+            - Update TTL and checksum
+            - If the next hop addr not in ARP table, queue a ARP request
+            - If the next hop addr is in ARP table, forward the packet
 
-Additionally, the `Makefile` a `clean` target, and `tarball` target to create the submission file as well.
+## Difficulties
 
-You will need to modify the `Makefile` to add your userid for the `.tar.gz` turn-in at the top of the file.
-
-## Academic Integrity Note
-
-You must host your code in private repositories on [GitHub](https://github.com/), [GitLab](https://gitlab.com), or other places.  At the same time, you are PROHIBITED to make your code for the class project public during the class or any time after the class.  If you do so, you will be violating academic honestly policy that you have signed, as well as the student code of conduct and be subject to serious sanctions.
-
-## Known Limitations
-
-When POX controller is restrated, the simpler router needs to be manually stopped and started again.
-
-## Acknowledgement
-
-This implementation is based on the original code for Stanford CS144 lab3 (https://bitbucket.org/cs144-1617/lab3).
-
-## TODO
-
-    ###########################################################
-    ##                                                       ##
-    ## REPLACE CONTENT OF THIS FILE WITH YOUR PROJECT REPORT ##
-    ##                                                       ##
-    ###########################################################
+There are some difficulties that I faced while implementing the simple router:
+- It took a long time to understand the given structure of the project. To overcome this problem, I watched the lecture several times, then watched the discussion before jumping into the project
+- It was hard to visualize the IP addresses and MAC addresses to debug whatever packed into the headers. After reading post on piazza, I realized that there is a file named utilis.cpp that has all implementation to print out the headers of the received packet
