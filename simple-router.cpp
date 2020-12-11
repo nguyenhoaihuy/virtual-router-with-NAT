@@ -178,6 +178,9 @@ SimpleRouter::forwardPacket(const Buffer& packet,const std::string& inIface, int
         // make ARP request
         print_hdrs(packet);
         iphd->ip_ttl = ttl;
+        iphd->ip_sum = 0;
+        uint16_t calculate_cksum = cksum(iphd,sizeof(ip_hdr));
+        iphd->ip_sum = calculate_cksum;
         m_arp.queueRequest(routing_entry.gw, packet,routing_entry.ifName);
       }
     } catch (std::runtime_error& error) {

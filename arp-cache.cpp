@@ -31,7 +31,7 @@ void
 ArpCache::periodicCheckArpRequestsAndCacheEntries()
 {
   // actually send ARP request
-  // int count = 0;
+  int count = 0;
   for (std::list<std::shared_ptr<ArpRequest>>::iterator req = m_arpRequests.begin(); req != m_arpRequests.end();) {
     
       if (steady_clock::now() - (*req)->timeSent > seconds(1)) {
@@ -83,7 +83,7 @@ ArpCache::periodicCheckArpRequestsAndCacheEntries()
 
 
   for (std::list<std::shared_ptr<ArpEntry>>::iterator entry = m_cacheEntries.begin(); entry != m_cacheEntries.end();) {
-      // count++;
+      count++;
       // printf("ip:.............%s\n",ipToString((*entry)->ip).c_str());
       if (!((*entry)->isValid)){
         // printf("erease.............................%d.!\n",count);
@@ -92,7 +92,7 @@ ArpCache::periodicCheckArpRequestsAndCacheEntries()
         ++entry;
       }
   }
-  // printf("Number of request = %d.........\n",count);
+  printf("Number of ARP entries = %d.........\n",count);
 
   //
   // FILL THIS IN
